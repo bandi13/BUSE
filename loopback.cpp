@@ -1,5 +1,5 @@
 /*
- * loopback - example loopback device using BUSE
+ * loopback - example loopback device using BUSE-CPP
  * Copyright (C) 2015 Andras Fekete
  *
  * This program is free software; you can redistribute it and/or modify

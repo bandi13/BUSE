@@ -1,6 +1,6 @@
 /*
  * busexmp - example memory-based block device using BUSE
- * Copyright (C) 2013 Adam Cozzette
+ * Copyright (C) 2015 Andras Fekete
  *
  * This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
