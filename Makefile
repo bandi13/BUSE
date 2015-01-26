@@ -4,11 +4,14 @@ OBJS		:= $(TARGET:=.o) $(LIBOBJS)
 STATIC_LIB	:= libbuse.a
 
 CC		:= /usr/bin/g++
-CFLAGS		:= -g -pedantic -Wall -Wextra
+CFLAGS		:= -pedantic -Wall -Wextra
 LDFLAGS		:= -L. -lbuse
 
 .PHONY: all clean
 all: $(TARGET)
+
+debug: CFLAGS += -DDEBUG -g
+debug: $(TARGET)
 
 $(TARGET): %: %.o $(STATIC_LIB)
 	$(CC) -o $@ $< $(LDFLAGS)

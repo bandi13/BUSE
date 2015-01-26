@@ -17,6 +17,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <iostream>
+using namespace std;
+
 namespace buse {
 	buseLODevice::buseLODevice(char *fileName) {
 		struct stat buf;
