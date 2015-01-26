@@ -44,9 +44,9 @@ namespace buse {
 		close(fd);
 	}
 
-	uint32_t buseLODevice::read(void* buf, uint32_t len, uint64_t offset, void* userdata) {
+	uint32_t buseLODevice::read(void* buf, uint32_t len, uint64_t offset) {
 		int bytes_read;
-		buseOperations::read(buf, len, offset, userdata);
+		buseOperations::read(buf, len, offset);
 
 		lseek64(fd, offset, SEEK_SET);
 		while (len > 0) {
@@ -59,9 +59,9 @@ namespace buse {
 		return 0;
 	}
 
-	uint32_t buseLODevice::write(const void* buf, uint32_t len, uint64_t offset, void* userdata) {
+	uint32_t buseLODevice::write(const void* buf, uint32_t len, uint64_t offset) {
 		int bytes_written;
-		buseOperations::write(buf, len, offset, userdata);
+		buseOperations::write(buf, len, offset);
 
 		lseek64(fd, offset, SEEK_SET);
 		while (len > 0) {

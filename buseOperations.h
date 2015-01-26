@@ -19,14 +19,14 @@ namespace buse {
 
 			virtual uint64_t getSize();
 
-			virtual uint32_t read(void *buf, uint32_t len, uint64_t offset, void *userdata);
-			virtual uint32_t write(const void *buf, uint32_t len, uint64_t offset, void *userdata);
-			virtual void disc(void *userdata);
-			virtual int flush(void *userdata);
-			virtual int trim(uint64_t from, uint32_t len, void *userdata);
+			virtual uint32_t read(void *buf, uint32_t len, uint64_t offset);
+			virtual uint32_t write(const void *buf, uint32_t len, uint64_t offset);
+			virtual void disc();
+			virtual int flush();
+			virtual int trim(uint64_t from, uint32_t len);
 
 		protected:
-			uint64_t size;
+			uint64_t size; // size of the entire array
 	};
 }
 

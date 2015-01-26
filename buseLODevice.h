@@ -15,8 +15,8 @@ namespace buse {
 		public:
 			buseLODevice(char *fileName);
 			~buseLODevice();
-			uint32_t read(void *buf, uint32_t len, uint64_t offset, void *userdata);
-			uint32_t write(const void *buf, uint32_t len, uint64_t offset, void *userdata);
+			uint32_t read(void *buf, uint32_t len, uint64_t offset);
+			uint32_t write(const void *buf, uint32_t len, uint64_t offset);
 
 		private:
 			int fd;

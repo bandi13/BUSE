@@ -21,10 +21,8 @@
 #include "buse.h"
 using namespace buse;
 
-static int xmpl_debug = 1;
-
 int main(int argc, char *argv[]) {
 	UNUSED(argc);
 	buseRAMDevice aop(128 * 1024);
-	return buse_main(argv[1], &aop, (void *) &xmpl_debug);
+	return buse_main(argv[1], &aop);
 }

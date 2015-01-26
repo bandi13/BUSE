@@ -36,7 +36,7 @@ int main(int argc, char *argv[]) {
 
 	buseLODevice bop(argv[1]);
 
-	buse_main(argv[2], &bop, NULL);
+	buse_main(argv[2], &bop);
 
 	return 0;
 }

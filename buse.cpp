@@ -84,7 +84,7 @@ static int write_all(int fd, char* buf, size_t count) {
 	return 0;
 }
 
-int buse_main(const char* dev_file, buseOperations *aop, void *userdata) {
+int buse_main(const char* dev_file, buseOperations *aop) {
 	int sp[2];
 	int nbd, sk, err, tmp_fd;
 	uint64_t from;
@@ -158,7 +158,7 @@ int buse_main(const char* dev_file, buseOperations *aop, void *userdata) {
 		case NBD_CMD_READ:
 			DEBUGCODE(cerr << "Request for read of size " << len << " at " << from << endl;);
 			chunk = malloc(len);
-			reply.error = aop->read(chunk, len, from, userdata);
+			reply.error = aop->read(chunk, len, from);
 			write_all(sk, (char*) &reply, sizeof(struct nbd_reply));
 			if (reply.error == 0)
 				write_all(sk, (char*) chunk, len);
@@ -168,26 +168,26 @@ int buse_main(const char* dev_file, buseOperations *aop, void *userdata) {
 			DEBUGCODE(cerr << "Request for write of size " << len << " at " << from << endl;);
 			chunk = malloc(len);
 			read_all(sk, (char *) chunk, len);
-			reply.error = aop->write(chunk, len, from, userdata);
+			reply.error = aop->write(chunk, len, from);
 			free(chunk);
 			write_all(sk, (char*) &reply, sizeof(struct nbd_reply));
 			break;
 		case NBD_CMD_DISC:
 			/* Handle a disconnect request. */
 			DEBUGCODE(cerr << "Request for disconnect." << endl);
-			aop->disc(userdata);
+			aop->disc();
 			return 0;
 #ifdef NBD_FLAG_SEND_FLUSH
 		case NBD_CMD_FLUSH:
 			DEBUGCODE(cerr<<"Request for flush."<<endl);
-			reply.error = aop->flush(userdata);
+			reply.error = aop->flush();
 			write_all(sk, (char*) &reply, sizeof(struct nbd_reply));
 			break;
 #endif
 #ifdef NBD_FLAG_SEND_TRIM
 		case NBD_CMD_TRIM:
 			DEBUGCODE(cerr<<"Request for trim."<<endl);
-			reply.error = aop->trim(from, len, userdata);
+			reply.error = aop->trim(from, len);
 			write_all(sk, (char*) &reply, sizeof(struct nbd_reply));
 			break;
 #endif

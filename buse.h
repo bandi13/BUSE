@@ -4,6 +4,6 @@
 #include "buseOperations.h"
 using namespace buse;
 
-int buse_main(const char* dev_file, buseOperations *bop, void *userdata);
+int buse_main(const char* dev_file, buseOperations *bop);
 
 #endif /* BUSE_H_INCLUDED */
