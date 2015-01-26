@@ -1,10 +1,10 @@
 TARGET		:= busexmp loopback
-LIBOBJS 	:= buse.o
+LIBOBJS 	:= buse.o buseOperations.o buseRAMDevice.o buseLODevice.o
 OBJS		:= $(TARGET:=.o) $(LIBOBJS)
 STATIC_LIB	:= libbuse.a
 
-CC		:= /usr/bin/gcc
-CFLAGS		:= -g -pedantic -Wall -Wextra -std=c99
+CC		:= /usr/bin/g++
+CFLAGS		:= -g -pedantic -Wall -Wextra
 LDFLAGS		:= -L. -lbuse
 
 .PHONY: all clean
@@ -12,14 +12,14 @@ all: $(TARGET)
 
 $(TARGET): %: %.o $(STATIC_LIB)
 	$(CC) -o $@ $< $(LDFLAGS)
-
-$(TARGET:=.o): %.o: %.c buse.h
+	
+$(TARGET:=.o): %.o: %.cpp buse.h
 	$(CC) $(CFLAGS) -o $@ -c $<
 
 $(STATIC_LIB): $(LIBOBJS)
 	ar rcu $(STATIC_LIB) $(LIBOBJS)
 
-$(LIBOBJS): %.o: %.c
+$(LIBOBJS): %.o: %.cpp
 	$(CC) $(CFLAGS) -o $@ -c $<
 
 clean:

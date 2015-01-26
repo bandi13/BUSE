@@ -1,4 +1,10 @@
-# BUSE - A block device in userspace
+# BUSE-CPP - A block device in userspace (in C++)
+
+This code was branched from Adam Cozzette's work which was written in C. I wanted
+to add object hierarchy and other OOP methods. So I've taken the code and rewritten
+many of the pieces to allow for a C++ compilation.
+
+The section below is Adam's description of BUSE which is still fitting:
 
 This piece of software was inspired by FUSE, which allows the development of
 Linux file systems that run in userspace. The goal of BUSE is to allow virtual
