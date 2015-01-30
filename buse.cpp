@@ -103,6 +103,7 @@ int buse_main(const char* dev_file, buseOperations *aop) {
 	assert(ioctl(nbd, NBD_CLEAR_SOCK) != -1);
 
 	if (!fork()) {
+		DEBUGCODE(cerr << "Child process started." << endl);
 		/* The child needs to continue setting things up. */
 		close(sp[0]);
 		sk = sp[1];
@@ -123,6 +124,7 @@ int buse_main(const char* dev_file, buseOperations *aop) {
 
 		ioctl(nbd, NBD_CLEAR_QUE);
 		ioctl(nbd, NBD_CLEAR_SOCK);
+		DEBUGCODE(cerr << "Child process finished." << endl);
 
 		exit(0);
 	}
@@ -140,6 +142,8 @@ int buse_main(const char* dev_file, buseOperations *aop) {
 
 	reply.magic = htonl(NBD_REPLY_MAGIC);
 	reply.error = htonl(0);
+
+	DEBUGCODE(cerr << "Parent process is about to loop." << endl);
 
 	while ((bytes_read = read(sk, &request, sizeof(request))) > 0) {
 		assert(bytes_read == sizeof(request));
@@ -197,5 +201,6 @@ int buse_main(const char* dev_file, buseOperations *aop) {
 		}
 	}
 	if (bytes_read == -1) cerr << strerror(errno) << endl;
+	DEBUGCODE(cerr << "Parent process has exited." << endl);
 	return 0;
 }
