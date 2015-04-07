@@ -11,10 +11,13 @@ CFLAGS		:= -pedantic -Wall -Wextra -std=c++11
 LDFLAGS		:= -Lbin -lbuse -lboost_system
 
 .PHONY: all clean
-all: $(TARGET) $(TEST)
+all: $(BIN) $(TARGET) $(TEST)
 
 debug: CFLAGS += -DDEBUG -g
-debug: $(TARGET) $(TEST)
+debug: $(BIN) $(TARGET) $(TEST)
+
+${BIN}:
+	mkdir -p ${BIN}
 
 $(TEST): %: %.o
 	$(CC) -o $@ $<

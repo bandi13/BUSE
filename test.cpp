@@ -1,3 +1,7 @@
+/* Test program created by: Fekete, Andras
+	 This program writes a set of random byte sequences in random locations on
+	 the nbd disk and then reads them back to make sure they're correctly written.
+	 */
 #define _LARGEFILE64_SOURCE
 #include <stdio.h>
 #include <assert.h>
