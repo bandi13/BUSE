@@ -81,6 +81,8 @@ inline int doChild(const int nbd, const int sockChild, const uint64_t bopSize) {
 	ioctl(nbd, NBD_CLEAR_QUE);
 	DEBUGPRINTLN("child: Before CLEAR_SOCK");
 	ioctl(nbd, NBD_CLEAR_SOCK);
+	DEBUGPRINTLN("child: Before CMD_DISC");
+	ioctl(nbd, NBD_CMD_DISC);
 
 	return retVal;
 }
@@ -199,28 +201,11 @@ inline int doParent(const int sockParent, buseOperations *bop) {
 	return 0;
 }
 
-// Wait until the child process (childPID) has exited
-void waitForChild(int childPID) {
-	int status;
-	waitpid(childPID, &status, 0);
-	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-		cerr << "Child process failed with code: " << status << '(' << strerror(status) << ')' << endl;
-	}
-}
-
 // Function that catches SIGINT in the child
 void childSIGINTHandler(int s) {
 	UNUSED(s);
 	DEBUGPRINTLN("child: Caught signal " << s);
 	cout << "Child gracefully shutting down..." << endl;
-}
-
-// Function that catches SIGINT in the parent which stops listening on the socket
-void parentSIGINTHandler(int s) {
-	UNUSED(s);
-	DEBUGPRINTLN("parent: Caught signal " << s);
-	cout << "Parent gracefully shutting down..." << endl;
-	continueRunningParent = false;
 }
 
 int buse_main(const char* dev_file, buseOperations *bop) {
@@ -252,7 +237,7 @@ int buse_main(const char* dev_file, buseOperations *bop) {
 		int nbd = open(dev_file, O_RDWR | O_LARGEFILE | O_DIRECT | O_SYNC);
 		assert(nbd != -1);
 
-		// Ignore the SIGINT interrupt
+		// Gracefully close on SIGINT
 		sigIntHandler.sa_handler = childSIGINTHandler;
 		sigaction(SIGINT, &sigIntHandler, NULL);
 
@@ -263,14 +248,12 @@ int buse_main(const char* dev_file, buseOperations *bop) {
 	else {
 		close(sp[sockChild]);
 
-		// Gracefully close on SIGINT
-		sigIntHandler.sa_handler = parentSIGINTHandler;
+		// Ignore the SIGINT interrupt
+		sigIntHandler.sa_handler = SIG_IGN;
 		sigaction(SIGINT, &sigIntHandler, NULL);
 
 		retVal = doParent(sp[sockParent],bop);
 		close(sp[sockParent]); // we are no longer listening to commands on the socket and closing our end will send an EPIPE fault on the other end
-
-		waitForChild(childPID); // Wait until the child stops sending requests and the socket is closed on both ends
 
 		delete bop; // Make sure to cleanly close up shop
 		DEBUGPRINTLN("Parent process has exited.");
