@@ -16,6 +16,7 @@
  *  with this program; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
+#include "buse.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -33,18 +34,60 @@
 #include <sys/types.h>
 #include <linux/nbd.h>
 
-#include "buse.h"
-#include "commonIncludes.h"
+// interrupt handling stuffs
+#include <ctype.h>
+#include <signal.h>
+
+#include <sys/wait.h>
+
 #include <iostream>
 using namespace std;
 
-/*
- * These helper functions were taken from cliserv.h in the nbd distribution.
- */
-#ifdef WORDS_BIGENDIAN
-u_int64_t ntohll(u_int64_t a) {
-	return a;
+// A function that takes the child end of the socket and handle commands coming in on the NBD device
+inline int doChild(const int nbd, const int sockChild, const uint64_t bopSize) {
+	int retVal = 0;
+	assert(ioctl(nbd, NBD_SET_SIZE, bopSize) != -1);
+//	assert(ioctl(nbd, NBD_SET_BLKSIZE, 4096) != -1);
+//	assert(ioctl(nbd, NBD_SET_SIZE_BLOCKS, bopSize / 4096) != -1);
+	assert(ioctl(nbd, NBD_CLEAR_SOCK) != -1);
+
+	DEBUGPRINTLN("Child process started.");
+	/* The child needs to continue setting things up. */
+
+	DEBUGPRINTLN("Before SET_SOCK");
+
+	if (ioctl(nbd, NBD_SET_SOCK, sockChild) == -1) {
+		cerr << "child: ioctl(nbd, NBD_SET_SOCK, sp[sockChild]) failed.[" << strerror(errno) << "]" << endl;
+		retVal = errno;
+	}
+#if defined NBD_SET_FLAGS && defined NBD_FLAG_SEND_TRIM
+	else if (ioctl(nbd, NBD_SET_FLAGS, NBD_FLAG_SEND_TRIM) == -1) {
+		cerr << "child: ioctl(nbd, NBD_SET_FLAGS, NBD_FLAG_SEND_TRIM) failed.[" << strerror(errno) << "]" << endl;
+		retVal = errno;
+	}
+#endif
+	else {
+		DEBUGPRINTLN("Before DO_IT");
+		int err = ioctl(nbd, NBD_DO_IT);
+		if (err == -1) {
+			if(errno != EPIPE) { // we're expecting a broken pipe when the parent closes it
+				cerr << "child: nbd device terminated with code " << errno << '(' << strerror(errno) << ')' << endl;
+				retVal = errno;
+			}
+		}
+	}
+
+	DEBUGPRINTLN("child: Before CLEAR_QUE");
+	ioctl(nbd, NBD_CLEAR_QUE);
+	DEBUGPRINTLN("child: Before CLEAR_SOCK");
+	ioctl(nbd, NBD_CLEAR_SOCK);
+
+	return retVal;
 }
+
+// These helper functions were taken from cliserv.h in the nbd distribution.
+#ifdef WORDS_BIGENDIAN
+u_int64_t ntohll(u_int64_t a) { return a; }
 #else
 u_int64_t ntohll(u_int64_t a) {
 	u_int32_t lo = a & 0xffffffff;
@@ -84,68 +127,22 @@ static int write_all(int fd, char* buf, size_t count) {
 	return 0;
 }
 
-int buse_main(const char* dev_file, buseOperations *aop) {
-	int sp[2];
-	int nbd, sk, err, tmp_fd;
-	uint64_t from;
-	uint32_t len;
+bool continueRunningParent = true;
+// Function that distributes calls to the underlying storage structure(s)
+inline int doParent(const int sockParent, buseOperations *bop) {
 	ssize_t bytes_read;
 	struct nbd_request request;
 	struct nbd_reply reply;
+	uint32_t len;
+	uint64_t from;
 	void *chunk;
-
-	assert(!socketpair(AF_UNIX, SOCK_STREAM, 0, sp));
-
-	nbd = open(dev_file, O_RDWR);
-	assert(nbd != -1);
-
-	assert(ioctl(nbd, NBD_SET_SIZE, aop->getSize()) != -1);
-	assert(ioctl(nbd, NBD_CLEAR_SOCK) != -1);
-
-	if (!fork()) {
-		DEBUGCODE(cerr << "Child process started." << endl);
-		/* The child needs to continue setting things up. */
-		close(sp[0]);
-		sk = sp[1];
-
-		if (ioctl(nbd, NBD_SET_SOCK, sk) == -1) {
-			cerr << "ioctl(nbd, NBD_SET_SOCK, sk) failed.[" << strerror(errno) << "]" << endl;
-		}
-#if defined NBD_SET_FLAGS && defined NBD_FLAG_SEND_TRIM
-		else if (ioctl(nbd, NBD_SET_FLAGS, NBD_FLAG_SEND_TRIM) == -1) {
-			cerr << "ioctl(nbd, NBD_SET_FLAGS, NBD_FLAG_SEND_TRIM) failed.[" << strerror(errno) << "]" << endl;
-		}
-#endif
-		else {
-			err = ioctl(nbd, NBD_DO_IT);
-			cerr << "nbd device terminated with code " << err << endl;
-			if (err == -1) cerr << strerror(errno) << endl;
-		}
-
-		ioctl(nbd, NBD_CLEAR_QUE);
-		ioctl(nbd, NBD_CLEAR_SOCK);
-		DEBUGCODE(cerr << "Child process finished." << endl);
-
-		exit(0);
-	}
-
-	/* The parent opens the device file at least once, to make sure the
-	 * partition table is updated. Then it closes it and starts serving up
-	 * requests. */
-
-	tmp_fd = open(dev_file, O_RDONLY);
-	assert(tmp_fd != -1);
-	close(tmp_fd);
-
-	close(sp[1]);
-	sk = sp[0];
 
 	reply.magic = htonl(NBD_REPLY_MAGIC);
 	reply.error = htonl(0);
 
-	DEBUGCODE(cerr << "Parent process is about to loop." << endl);
+	DEBUGPRINTLN("Parent process is about to loop.");
 
-	while ((bytes_read = read(sk, &request, sizeof(request))) > 0) {
+	while (((bytes_read = read(sockParent, &request, sizeof(request))) > 0) && continueRunningParent) {
 		assert(bytes_read == sizeof(request));
 		memcpy(reply.handle, request.handle, sizeof(reply.handle));
 
@@ -160,39 +157,37 @@ int buse_main(const char* dev_file, buseOperations *aop) {
 		 * and writes.
 		 */
 		case NBD_CMD_READ:
-			DEBUGCODE(cerr << "Request for read of size " << len << " at " << from << endl;);
+			DEBUGPRINTLN("Request for read of size " << len << " at " << from);
 			chunk = malloc(len);
-			reply.error = aop->read(chunk, len, from);
-			write_all(sk, (char*) &reply, sizeof(struct nbd_reply));
-			if (reply.error == 0)
-				write_all(sk, (char*) chunk, len);
+			reply.error = bop->read(chunk, len, from);
+			write_all(sockParent, (char*) &reply, sizeof(struct nbd_reply));
+			if (reply.error == 0) write_all(sockParent, (char*) chunk, len);
 			free(chunk);
 			break;
 		case NBD_CMD_WRITE:
-			DEBUGCODE(cerr << "Request for write of size " << len << " at " << from << endl;);
+			DEBUGPRINTLN("Request for write of size " << len << " at " << from);
 			chunk = malloc(len);
-			read_all(sk, (char *) chunk, len);
-			reply.error = aop->write(chunk, len, from);
+			read_all(sockParent, (char *) chunk, len);
+			reply.error = bop->write(chunk, len, from);
 			free(chunk);
-			write_all(sk, (char*) &reply, sizeof(struct nbd_reply));
+			write_all(sockParent, (char*) &reply, sizeof(struct nbd_reply));
 			break;
 		case NBD_CMD_DISC:
-			/* Handle a disconnect request. */
-			DEBUGCODE(cerr << "Request for disconnect." << endl);
-			aop->disc();
+			DEBUGPRINTLN("Request for disconnect.");
+			bop->disc();
 			return 0;
 #ifdef NBD_FLAG_SEND_FLUSH
 		case NBD_CMD_FLUSH:
-			DEBUGCODE(cerr<<"Request for flush."<<endl);
-			reply.error = aop->flush();
-			write_all(sk, (char*) &reply, sizeof(struct nbd_reply));
+			DEBUGPRINTLN("Request for flush.");
+			reply.error = bop->flush();
+			write_all(sockParent, (char*) &reply, sizeof(struct nbd_reply));
 			break;
 #endif
 #ifdef NBD_FLAG_SEND_TRIM
 		case NBD_CMD_TRIM:
-			DEBUGCODE(cerr<<"Request for trim."<<endl);
-			reply.error = aop->trim(from, len);
-			write_all(sk, (char*) &reply, sizeof(struct nbd_reply));
+			DEBUGPRINTLN("Request for trim.");
+			reply.error = bop->trim(from, len);
+			write_all(sockParent, (char*) &reply, sizeof(struct nbd_reply));
 			break;
 #endif
 		default:
@@ -200,7 +195,86 @@ int buse_main(const char* dev_file, buseOperations *aop) {
 			assert(0);
 		}
 	}
-	if (bytes_read == -1) cerr << strerror(errno) << endl;
-	DEBUGCODE(cerr << "Parent process has exited." << endl);
+	if (continueRunningParent && (bytes_read == -1)) cerr << "Parent caught error: " << strerror(errno) << endl;
 	return 0;
+}
+
+// Wait until the child process (childPID) has exited
+void waitForChild(int childPID) {
+	int status;
+	waitpid(childPID, &status, 0);
+	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+		cerr << "Child process failed with code: " << status << '(' << strerror(status) << ')' << endl;
+	}
+}
+
+// Function that catches SIGINT in the child
+void childSIGINTHandler(int s) {
+	UNUSED(s);
+	DEBUGPRINTLN("child: Caught signal " << s);
+	cout << "Child gracefully shutting down..." << endl;
+}
+
+// Function that catches SIGINT in the parent which stops listening on the socket
+void parentSIGINTHandler(int s) {
+	UNUSED(s);
+	DEBUGPRINTLN("parent: Caught signal " << s);
+	cout << "Parent gracefully shutting down..." << endl;
+	continueRunningParent = false;
+}
+
+int buse_main(const char* dev_file, buseOperations *bop) {
+	int sp[2];
+	static const int sockParent = 0;
+	static const int sockChild = 1;
+	int retVal = 0;
+	struct sigaction sigIntHandler;
+	sigemptyset(&sigIntHandler.sa_mask);
+	sigIntHandler.sa_flags = 0;
+
+	assert(!socketpair(AF_UNIX, SOCK_STREAM, 0, sp)); // create local loopback socket pair for each thread
+
+	{
+		/* Due to a race, the kernel NBD driver cannot call for a reread of the partition table
+		 * in the handling of the NBD_DO_IT ioctl(). Therefore, this is done in the first open()
+		 * of the device. We therefore make sure that the device is opened at least once after the
+		 * connection was made. This has to be done in a separate process, since the NBD_DO_IT ioctl()
+		 * does not return until the NBD device has disconnected. */
+		int tmp_fd = open(dev_file, O_RDONLY);
+		assert(tmp_fd != -1);
+		close(tmp_fd);
+	}
+
+	// fork() creates an identical set of processes with all the same variables
+	int childPID = fork();
+	if (!childPID) { // fork() always returns '0' on the child process
+		close(sp[sockParent]);
+		int nbd = open(dev_file, O_RDWR | O_LARGEFILE | O_DIRECT | O_SYNC);
+		assert(nbd != -1);
+
+		// Ignore the SIGINT interrupt
+		sigIntHandler.sa_handler = childSIGINTHandler;
+		sigaction(SIGINT, &sigIntHandler, NULL);
+
+		retVal = doChild(nbd,sp[sockChild],bop->getSize());
+		close(sp[sockChild]);
+		DEBUGPRINTLN("Child process finished.");
+	}
+	else {
+		close(sp[sockChild]);
+
+		// Gracefully close on SIGINT
+		sigIntHandler.sa_handler = parentSIGINTHandler;
+		sigaction(SIGINT, &sigIntHandler, NULL);
+
+		retVal = doParent(sp[sockParent],bop);
+		close(sp[sockParent]); // we are no longer listening to commands on the socket and closing our end will send an EPIPE fault on the other end
+
+		waitForChild(childPID); // Wait until the child stops sending requests and the socket is closed on both ends
+
+		delete bop; // Make sure to cleanly close up shop
+		DEBUGPRINTLN("Parent process has exited.");
+	}
+
+	return retVal;
 }

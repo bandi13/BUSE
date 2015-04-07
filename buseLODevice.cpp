@@ -4,8 +4,7 @@
  *  Created on: Jan 25, 2015
  *      Author: andras
  */
-
-#define _LARGEFILE64_SOURCE
+#include "buseLODevice.h"
 
 #include <assert.h>
 #include <fcntl.h>
@@ -13,7 +12,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "buseLODevice.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -36,13 +34,11 @@ namespace buse {
 		/* Figure out the size of the underlying block device. */
 		err = ioctl(fd, BLKGETSIZE64, &size);
 		assert(err != -1);
-		DEBUGCODE(cerr << "The size of this device is " << size << " bytes." << endl);
+		DEBUGPRINTLN("The size of this device is " << size << " bytes.");
 		this->size = size;
 	}
 
-	buseLODevice::~buseLODevice() {
-		close(fd);
-	}
+	buseLODevice::~buseLODevice() { close(fd); }
 
 	uint32_t buseLODevice::read(void* buf, uint32_t len, uint64_t offset) {
 		int bytes_read;

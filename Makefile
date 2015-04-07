@@ -1,28 +1,37 @@
-TARGET		:= busexmp loopback
-LIBOBJS 	:= buse.o buseOperations.o buseRAMDevice.o buseLODevice.o
+BIN         := bin
+TARGET	    := $(BIN)/buseMainTest
+TEST				:= $(BIN)/test
+LIBOBJS     := $(BIN)/buse.o $(BIN)/buseOperations.o $(BIN)/buseRAMDevice.o $(BIN)/buseLODevice.o
 OBJS		:= $(TARGET:=.o) $(LIBOBJS)
-STATIC_LIB	:= libbuse.a
+STATIC_LIB	:= $(BIN)/libbuse.a
+COMMONHEADERS := commonIncludes.h buse.h
 
-CC		:= /usr/bin/g++
-CFLAGS		:= -pedantic -Wall -Wextra
-LDFLAGS		:= -L. -lbuse
+CC    		:= /usr/bin/g++
+CFLAGS		:= -pedantic -Wall -Wextra -std=c++11
+LDFLAGS		:= -Lbin -lbuse -lboost_system
 
 .PHONY: all clean
-all: $(TARGET)
+all: $(TARGET) $(TEST)
 
 debug: CFLAGS += -DDEBUG -g
-debug: $(TARGET)
+debug: $(TARGET) $(TEST)
+
+$(TEST): %: %.o
+	$(CC) -o $@ $<
+
+$(TEST:=.o): $(BIN)/%.o: %.cpp
+	$(CC) $(CFLAGS) -o $@ -c $<
 
 $(TARGET): %: %.o $(STATIC_LIB)
 	$(CC) -o $@ $< $(LDFLAGS)
 	
-$(TARGET:=.o): %.o: %.cpp buse.h
+$(TARGET:=.o): $(BIN)/%.o: %.cpp $(COMMONHEADERS)
 	$(CC) $(CFLAGS) -o $@ -c $<
 
 $(STATIC_LIB): $(LIBOBJS)
 	ar rcu $(STATIC_LIB) $(LIBOBJS)
 
-$(LIBOBJS): %.o: %.cpp
+$(LIBOBJS): $(BIN)/%.o: %.cpp $(COMMONHEADERS)
 	$(CC) $(CFLAGS) -o $@ -c $<
 
 clean:
