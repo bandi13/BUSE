@@ -40,7 +40,7 @@ namespace buse {
 
 	uint32_t buseOperations::flush() {
 		DEBUGPRINTLN("Received a flush request.");
-		for(uint i = 0; i < this->disks.size(); i++) ::syncfs(disks[i].fd);
+		for(uint i = 0; i < this->disks.size(); i++) ::syncfs(disks[i]->fd);
 		return 0;
 	}
 
@@ -56,33 +56,33 @@ namespace buse {
 		char buf[4][READBYTESSIZE];
 		for(uint i = 0; i < READBYTESSIZE; i++) { buf[4][i] = 0xA5; }
 		for(uint i = 0; i < disks.size(); i++) {
-			if(disks[i].diskSize < 2*READBYTESSIZE) {
-				disks[i].readSpeed = chrono::duration<double>().zero();
-				disks[i].writeSpeed = chrono::duration<double>().zero();
+			if(disks[i]->diskSize < 2*READBYTESSIZE) {
+				disks[i]->readSpeed = chrono::duration<double>().zero();
+				disks[i]->writeSpeed = chrono::duration<double>().zero();
 				continue;
 			}
 			startTime = chrono::system_clock::now();
-			lseek64(disks[i].fd, 0, SEEK_SET);
-			::read(disks[i].fd,&buf[0],READBYTESSIZE);
-			lseek64(disks[i].fd, disks[i].diskSize / 2, SEEK_SET);
-			::read(disks[i].fd,&buf[1],READBYTESSIZE);
-			lseek64(disks[i].fd, disks[i].diskSize - READBYTESSIZE, SEEK_SET);
-			::read(disks[i].fd,&buf[2],READBYTESSIZE);
-			disks[i].readSpeed = chrono::system_clock::now() - startTime;
+			lseek64(disks[i]->fd, 0, SEEK_SET);
+			::read(disks[i]->fd,&buf[0],READBYTESSIZE);
+			lseek64(disks[i]->fd, disks[i]->diskSize / 2, SEEK_SET);
+			::read(disks[i]->fd,&buf[1],READBYTESSIZE);
+			lseek64(disks[i]->fd, disks[i]->diskSize - READBYTESSIZE, SEEK_SET);
+			::read(disks[i]->fd,&buf[2],READBYTESSIZE);
+			disks[i]->readSpeed = chrono::system_clock::now() - startTime;
 			startTime = chrono::system_clock::now();
-			lseek64(disks[i].fd, 0, SEEK_SET);
-			::write(disks[i].fd,&buf[4],READBYTESSIZE);
-			lseek64(disks[i].fd, disks[i].diskSize / 2, SEEK_SET);
-			::write(disks[i].fd,&buf[4],READBYTESSIZE);
-			lseek64(disks[i].fd, disks[i].diskSize - READBYTESSIZE, SEEK_SET);
-			::write(disks[i].fd,&buf[4],READBYTESSIZE);
-			disks[i].writeSpeed = chrono::system_clock::now() - startTime;
-			lseek64(disks[i].fd, 0, SEEK_SET);
-			::write(disks[i].fd,&buf[0],READBYTESSIZE);
-			lseek64(disks[i].fd, disks[i].diskSize / 2, SEEK_SET);
-			::write(disks[i].fd,&buf[1],READBYTESSIZE);
-			lseek64(disks[i].fd, disks[i].diskSize - READBYTESSIZE, SEEK_SET);
-			::write(disks[i].fd,&buf[2],READBYTESSIZE);
+			lseek64(disks[i]->fd, 0, SEEK_SET);
+			::write(disks[i]->fd,&buf[4],READBYTESSIZE);
+			lseek64(disks[i]->fd, disks[i]->diskSize / 2, SEEK_SET);
+			::write(disks[i]->fd,&buf[4],READBYTESSIZE);
+			lseek64(disks[i]->fd, disks[i]->diskSize - READBYTESSIZE, SEEK_SET);
+			::write(disks[i]->fd,&buf[4],READBYTESSIZE);
+			disks[i]->writeSpeed = chrono::system_clock::now() - startTime;
+			lseek64(disks[i]->fd, 0, SEEK_SET);
+			::write(disks[i]->fd,&buf[0],READBYTESSIZE);
+			lseek64(disks[i]->fd, disks[i]->diskSize / 2, SEEK_SET);
+			::write(disks[i]->fd,&buf[1],READBYTESSIZE);
+			lseek64(disks[i]->fd, disks[i]->diskSize - READBYTESSIZE, SEEK_SET);
+			::write(disks[i]->fd,&buf[2],READBYTESSIZE);
 		}
 	}
 }

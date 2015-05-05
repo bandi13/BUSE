@@ -41,7 +41,7 @@ namespace buse {
 			inline uint8_t getNumDrives() { return disks.size(); }
 
 		protected:
-			std::vector<diskStats_t> disks;
+			std::vector<diskStats_t *> disks;
 			uint64_t size; // size of the entire array
 	};
 }
