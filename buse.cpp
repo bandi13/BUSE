@@ -44,31 +44,32 @@
 using namespace std;
 
 // A function that takes the child end of the socket and handle commands coming in on the NBD device
-inline int doChild(const int nbd, const int sockChild, const uint64_t bopSize) {
+int nbdChild = -1;
+inline int doChild(const int sockChild, const uint64_t bopSize) {
 	int retVal = 0;
-	assert(ioctl(nbd, NBD_SET_SIZE, bopSize) != -1);
+	assert(ioctl(nbdChild, NBD_SET_SIZE, bopSize) != -1);
 //	assert(ioctl(nbd, NBD_SET_BLKSIZE, 4096) != -1);
 //	assert(ioctl(nbd, NBD_SET_SIZE_BLOCKS, bopSize / 4096) != -1);
-	assert(ioctl(nbd, NBD_CLEAR_SOCK) != -1);
+	assert(ioctl(nbdChild, NBD_CLEAR_SOCK) != -1);
 
 	DEBUGPRINTLN("Child process started.");
 	/* The child needs to continue setting things up. */
 
 	DEBUGPRINTLN("Before SET_SOCK");
 
-	if (ioctl(nbd, NBD_SET_SOCK, sockChild) == -1) {
+	if (ioctl(nbdChild, NBD_SET_SOCK, sockChild) == -1) {
 		cerr << "child: ioctl(nbd, NBD_SET_SOCK, sp[sockChild]) failed.[" << strerror(errno) << "]" << endl;
 		retVal = errno;
 	}
 #if defined NBD_SET_FLAGS && defined NBD_FLAG_SEND_TRIM
-	else if (ioctl(nbd, NBD_SET_FLAGS, NBD_FLAG_SEND_TRIM) == -1) {
+	else if (ioctl(nbdChild, NBD_SET_FLAGS, NBD_FLAG_SEND_TRIM) == -1) {
 		cerr << "child: ioctl(nbd, NBD_SET_FLAGS, NBD_FLAG_SEND_TRIM) failed.[" << strerror(errno) << "]" << endl;
 		retVal = errno;
 	}
 #endif
 	else {
 		DEBUGPRINTLN("Before DO_IT");
-		int err = ioctl(nbd, NBD_DO_IT);
+		int err = ioctl(nbdChild, NBD_DO_IT);
 		if (err == -1) {
 			if(errno != EPIPE) { // we're expecting a broken pipe when the parent closes it
 				cerr << "child: nbd device terminated with code " << errno << '(' << strerror(errno) << ')' << endl;
@@ -78,11 +79,11 @@ inline int doChild(const int nbd, const int sockChild, const uint64_t bopSize) {
 	}
 
 	DEBUGPRINTLN("child: Before CLEAR_QUE");
-	ioctl(nbd, NBD_CLEAR_QUE);
+	ioctl(nbdChild, NBD_CLEAR_QUE);
 	DEBUGPRINTLN("child: Before CLEAR_SOCK");
-	ioctl(nbd, NBD_CLEAR_SOCK);
-	DEBUGPRINTLN("child: Before CMD_DISC");
-	ioctl(nbd, NBD_CMD_DISC);
+	ioctl(nbdChild, NBD_CLEAR_SOCK);
+	//DEBUGPRINTLN("child: Before CMD_DISC");
+	//ioctl(nbd, NBD_CMD_DISC);
 
 	return retVal;
 }
@@ -129,7 +130,6 @@ static int write_all(int fd, char* buf, size_t count) {
 	return 0;
 }
 
-bool continueRunningParent = true;
 // Function that distributes calls to the underlying storage structure(s)
 inline int doParent(const int sockParent, buseOperations *bop) {
 	ssize_t bytes_read;
@@ -138,13 +138,17 @@ inline int doParent(const int sockParent, buseOperations *bop) {
 	uint32_t len;
 	uint64_t from;
 	void *chunk;
+	bool continueRunningParent = true;
 
 	reply.magic = htonl(NBD_REPLY_MAGIC);
 	reply.error = htonl(0);
 
 	DEBUGPRINTLN("Parent process is about to loop.");
 
-	while (((bytes_read = read(sockParent, &request, sizeof(request))) > 0) && continueRunningParent) {
+	while (continueRunningParent) {
+		DEBUGPRINTLN("Starting while loop.");
+		if((bytes_read = read(sockParent, &request, sizeof(request))) <= 0) continue;
+
 		assert(bytes_read == sizeof(request));
 		memcpy(reply.handle, request.handle, sizeof(reply.handle));
 
@@ -177,6 +181,7 @@ inline int doParent(const int sockParent, buseOperations *bop) {
 		case NBD_CMD_DISC:
 			DEBUGPRINTLN("Request for disconnect.");
 			bop->disc();
+			continueRunningParent = false;
 			return 0;
 #ifdef NBD_FLAG_SEND_FLUSH
 		case NBD_CMD_FLUSH:
@@ -201,11 +206,43 @@ inline int doParent(const int sockParent, buseOperations *bop) {
 	return 0;
 }
 
+void childSIGUSR1Handler(int s) {
+	UNUSED(s);
+	DEBUGPRINTLN("child: Before DISCONNECT");
+	ioctl(nbdChild, NBD_DISCONNECT);
+}
+
+void parentSIGUSR1Handler(int s) {
+	UNUSED(s);
+	// do nothing
+}
+
 // Function that catches SIGINT in the child
 void childSIGINTHandler(int s) {
+	static bool childSIGINTcaught = false;
 	UNUSED(s);
 	DEBUGPRINTLN("child: Caught signal " << s);
-	cout << "Child gracefully shutting down..." << endl;
+	if(childSIGINTcaught) {
+		cout << "Child forcefully shutting down..." << endl;
+		exit(-1);
+	} else {
+		cout << "Please send a USR1 interrupt to gracefully shut down" << endl;
+		childSIGINTcaught = true;
+	}
+}
+
+// Function that catches SIGINT in the parent which stops listening on the socket
+void parentSIGINTHandler(int s) {
+	static bool parentSIGINTcaught = false;
+	UNUSED(s);
+	DEBUGPRINTLN("parent: Caught signal " << s);
+	if(parentSIGINTcaught) {
+		cout << "Parent forcefully shutting down..." << endl;
+		exit(-1);
+	} else {
+		cout << "Please send a USR1 interrupt to gracefully shut down" << endl;
+		parentSIGINTcaught = true;
+	}
 }
 
 int buse_main(const char* dev_file, buseOperations *bop) {
@@ -213,9 +250,9 @@ int buse_main(const char* dev_file, buseOperations *bop) {
 	static const int sockParent = 0;
 	static const int sockChild = 1;
 	int retVal = 0;
-	struct sigaction sigIntHandler;
-	sigemptyset(&sigIntHandler.sa_mask);
-	sigIntHandler.sa_flags = 0;
+	struct sigaction sa;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;
 
 	assert(!socketpair(AF_UNIX, SOCK_STREAM, 0, sp)); // create local loopback socket pair for each thread
 
@@ -234,26 +271,29 @@ int buse_main(const char* dev_file, buseOperations *bop) {
 	int childPID = fork();
 	if (!childPID) { // fork() always returns '0' on the child process
 		close(sp[sockParent]);
-		int nbd = open(dev_file, O_RDWR | O_LARGEFILE | O_DIRECT | O_SYNC);
-		assert(nbd != -1);
+		nbdChild = open(dev_file, O_RDWR | O_LARGEFILE | O_DIRECT | O_SYNC);
+		assert(nbdChild != -1);
 
-		// Gracefully close on SIGINT
-		sigIntHandler.sa_handler = childSIGINTHandler;
-		sigaction(SIGINT, &sigIntHandler, NULL);
+		sa.sa_handler = childSIGINTHandler;
+		sigaction(SIGINT, &sa, NULL);
+		sa.sa_handler = childSIGUSR1Handler;
+		sigaction(SIGUSR1, &sa, NULL);
 
-		retVal = doChild(nbd,sp[sockChild],bop->getSize());
+		retVal = doChild(sp[sockChild],bop->getSize());
 		close(sp[sockChild]);
 		DEBUGPRINTLN("Child process finished.");
 	}
 	else {
 		close(sp[sockChild]);
+		DEBUGPRINTLN("Parent PID=" << getpid() << ", child PID=" << childPID);
 
-		// Ignore the SIGINT interrupt
-		sigIntHandler.sa_handler = SIG_IGN;
-		sigaction(SIGINT, &sigIntHandler, NULL);
+		sa.sa_handler = parentSIGINTHandler;
+		sigaction(SIGINT, &sa, NULL);
+		sa.sa_handler = parentSIGUSR1Handler;
+		sigaction(SIGUSR1, &sa, NULL);
 
 		retVal = doParent(sp[sockParent],bop);
-		close(sp[sockParent]); // we are no longer listening to commands on the socket and closing our end will send an EPIPE fault on the other end
+		close(sp[sockParent]); // we are no longer listening to commands on the socket
 
 		delete bop; // Make sure to cleanly close up shop
 		DEBUGPRINTLN("Parent process has exited.");

@@ -5,6 +5,7 @@
  *      Author: andras
  */
 #include "buseLODevice.h"
+#include "buseOperations.h"
 
 #include <assert.h>
 #include <fcntl.h>
@@ -23,50 +24,37 @@ namespace buse {
 		struct stat buf;
 		int err;
 		int64_t size;
-		fd = open(fileName, O_RDWR | O_LARGEFILE);
-		assert(fd != -1);
+		diskStats_t curDisk;
+		curDisk.fd = open(fileName, O_RDWR | O_LARGEFILE);
+		assert(curDisk.fd != -1);
 
 		/* Let's verify that this file is actually a block device. We could support
 		 * regular files, too, but we don't need to right now. */
-		fstat(fd, &buf);
+		fstat(curDisk.fd, &buf);
 		assert(S_ISBLK(buf.st_mode));
 
 		/* Figure out the size of the underlying block device. */
-		err = ioctl(fd, BLKGETSIZE64, &size);
+		err = ioctl(curDisk.fd, BLKGETSIZE64, &size);
 		assert(err != -1);
 		DEBUGPRINTLN("The size of this device is " << size << " bytes.");
 		this->size = size;
 	}
 
-	buseLODevice::~buseLODevice() { close(fd); }
+	buseLODevice::~buseLODevice() { close(disks[0].fd); }
 
-	uint32_t buseLODevice::read(void* buf, uint32_t len, uint64_t offset) {
-		int bytes_read;
-		buseOperations::read(buf, len, offset);
+	template <class Function>
+	uint32_t buseLODevice::handleTX(void *buf, uint32_t len, uint64_t offset, Function func) {
+		int bytes_processed;
 
-		lseek64(fd, offset, SEEK_SET);
+		lseek64(disks[0].fd, offset, SEEK_SET);
 		while (len > 0) {
-			bytes_read = ::read(fd, buf, len);
-			assert(bytes_read > 0);
-			len -= bytes_read;
-			buf = (char *) buf + bytes_read;
+			bytes_processed = func(disks[0].fd, buf, len);
+			assert(bytes_processed > 0);
+			len -= bytes_processed;
+			buf = (char *) buf + bytes_processed;
 		}
 
 		return 0;
 	}
 
-	uint32_t buseLODevice::write(const void* buf, uint32_t len, uint64_t offset) {
-		int bytes_written;
-		buseOperations::write(buf, len, offset);
-
-		lseek64(fd, offset, SEEK_SET);
-		while (len > 0) {
-			bytes_written = ::write(fd, buf, len);
-			assert(bytes_written > 0);
-			len -= bytes_written;
-			buf = (char *) buf + bytes_written;
-		}
-
-		return 0;
-	}
 }

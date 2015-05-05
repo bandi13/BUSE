@@ -7,7 +7,7 @@ STATIC_LIB	:= $(BIN)/libbuse.a
 COMMONHEADERS := commonIncludes.h buse.h
 
 CC    		:= /usr/bin/g++
-CFLAGS		:= -pedantic -Wall -Wextra -std=c++11
+CFLAGS		:= -pedantic -Wall -Wextra -std=c++14
 LDFLAGS		:= -Lbin -lbuse -lboost_system
 
 .PHONY: all clean
