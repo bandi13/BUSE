@@ -13,7 +13,14 @@ namespace buse {
 	buseOperations::buseOperations() { this->size = 0; }
 	buseOperations::buseOperations(uint64_t size) { this->size = size; }
 
-	buseOperations::~buseOperations() { DEBUGPRINTLN("Destroying buse object."); }
+	buseOperations::~buseOperations() {
+		DEBUGPRINTLN("Destroying buse object.");
+		while(!disks.empty()) {
+			close(disks.back()->fd);
+			delete disks.back();
+			disks.pop_back();
+		}
+	}
 
 	uint64_t buseOperations::getSize() { return size; }
 
