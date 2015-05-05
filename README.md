@@ -26,12 +26,12 @@ user.
 
 ## Running the Example Code
 
-BUSE comes with an example driver in `busexmp.c` that implements a 128 MB
+BUSE comes with an example driver in `buseRAMDevice.c` that implements a 128 MB
 memory disk. To try out the example code, run `make` and then execute the
 following as root:
 
     modprobe nbd
-    ./busexmp /dev/nbd0
+    ./bin/buseMainTest RAM /dev/nbd0
 
 You should then have an in-memory disk running, represented by the device file
 `/dev/nbd0`. You can create a file system on the virtual disk, mount it, and
@@ -39,3 +39,9 @@ start reading and writing files on it:
 
     mkfs.ext4 /dev/nbd0
     mount /dev/nbd0 /mnt
+	
+The other example driver is 'buseLODevice.c' which creates a loopback interface. You
+can use it with:
+		./bin/buseMainTest LO /dev/sda1 /dev/nbd1
+
+You can also chain the two programs together by replacing '/dev/sda1' with '/dev/nbd0'.
