@@ -60,8 +60,12 @@ namespace buse {
 #define READBYTESSIZE (128*1024*1024)
 	void buseOperations::testDiskSpeed() {
 		auto startTime = chrono::system_clock::now();
-		char buf[4][READBYTESSIZE];
-		for(uint i = 0; i < READBYTESSIZE; i++) { buf[4][i] = 0xA5; }
+		char **buf = (char **) malloc(sizeof(char *) * 4);
+		buf[0] = (char *) malloc(sizeof(char) * READBYTESIZE);
+		buf[1] = (char *) malloc(sizeof(char) * READBYTESIZE);
+		buf[2] = (char *) malloc(sizeof(char) * READBYTESIZE);
+		buf[3] = (char *) malloc(sizeof(char) * READBYTESIZE);
+		for(uint i = 0; i < READBYTESSIZE; i++) { buf[3][i] = 0xA5; }
 		for(uint i = 0; i < disks.size(); i++) {
 			if(disks[i]->diskSize < 2*READBYTESSIZE) {
 				disks[i]->readSpeed = chrono::duration<double>().zero();
@@ -91,5 +95,7 @@ namespace buse {
 			lseek64(disks[i]->fd, disks[i]->diskSize - READBYTESSIZE, SEEK_SET);
 			::write(disks[i]->fd,&buf[2],READBYTESSIZE);
 		}
+		free(buf[0]); free(buf[1]); free(buf[2]); free(buf[3]);
+		free(buf);
 	}
 }
