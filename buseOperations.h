@@ -9,6 +9,7 @@
 #define BUSEOPERATIONS_H_
 
 #include "commonIncludes.h"
+#include "diskStats.h"
 #include <chrono>
 #include <vector>
 #include <inttypes.h>
@@ -20,28 +21,24 @@ namespace buse {
 			buseOperations(uint64_t size);
 			virtual ~buseOperations();
 
-			typedef struct {
-					int fd;
-					uint64_t diskSize;
-					chrono::duration<double, std::micro> writeSpeed;
-					chrono::duration<double, std::micro> readSpeed;
-			} diskStats_t;
+			inline uint64_t getSize() { return size; }
 
-			virtual uint64_t getSize();
-
-			virtual uint32_t read(void *buf, uint32_t len, uint64_t offset);
-			virtual uint32_t write(const void *buf, uint32_t len, uint64_t offset);
-			template <class Function>
-			uint32_t handleTX(void *buf, uint32_t len, uint64_t offset, Function func);
+			virtual int read(void *buf, size_t len, off64_t offset);
+			virtual int write(const void *buf, size_t len, off64_t offset);
 
 			virtual void disc();
-			virtual uint32_t flush();
-			virtual uint32_t trim(uint64_t from, uint32_t len);
-			void testDiskSpeed();
+			virtual int flush();
+			virtual int trim(uint64_t from, uint32_t len);
 			inline uint8_t getNumDrives() { return disks.size(); }
+			uint8_t getNumAsyncIdle();
+			uint8_t getFastestIdleReadDisk();
+			uint8_t getFastestIdleWriteDisk();
 
 		protected:
-			std::vector<diskStats_t *> disks;
+			// helper function for read/write operations that are similar in content
+			virtual int handleTX(void *buf, size_t len, off64_t offset, ssize_t (*func)(int, void *, size_t));
+
+			std::vector<diskStats> disks;
 			uint64_t size; // size of the entire array
 	};
 }

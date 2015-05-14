@@ -1,14 +1,14 @@
 BIN         := bin
 TARGET	    := $(BIN)/buseMainTest
 TEST				:= $(BIN)/test
-LIBOBJS     := $(BIN)/buse.o $(BIN)/buseOperations.o $(BIN)/buseRAMDevice.o $(BIN)/buseLODevice.o
+LIBOBJS     := $(BIN)/buse.o $(BIN)/buseOperations.o $(BIN)/buseRAMDevice.o $(BIN)/buseLODevice.o $(BIN)/diskStats.o
 OBJS		:= $(TARGET:=.o) $(LIBOBJS)
 STATIC_LIB	:= $(BIN)/libbuse.a
 COMMONHEADERS := commonIncludes.h buse.h
 
 CC    		:= /usr/bin/g++
 CFLAGS		:= -pedantic -Wall -Wextra -std=c++14
-LDFLAGS		:= -Lbin -lbuse -lboost_system
+LDFLAGS		:= -Lbin -lbuse -lboost_system -lrt
 
 .PHONY: all clean
 all: $(BIN) $(TARGET) $(TEST)

@@ -17,39 +17,35 @@
 #include <string.h>
 
 #include <iostream>
+
 using namespace std;
 
 namespace buse {
 	buseLODevice::buseLODevice(char *fileName) {
 		struct stat buf;
-		int err;
-		int64_t size;
-		diskStats_t *curDisk = new diskStats_t();
-		curDisk->fd = open(fileName, O_RDWR | O_LARGEFILE);
-		assert(curDisk->fd != -1);
+		int fd;
+		fd = open(fileName, O_RDWR | O_LARGEFILE);
+		assert(fd != -1);
 
 		/* Let's verify that this file is actually a block device. We could support
 		 * regular files, too, but we don't need to right now. */
-		fstat(curDisk->fd, &buf);
+		fstat(fd, &buf);
 		assert(S_ISBLK(buf.st_mode));
 
-		/* Figure out the size of the underlying block device. */
-		err = ioctl(curDisk->fd, BLKGETSIZE64, &size);
-		assert(err != -1);
-		disks.push_back(curDisk);
-		DEBUGPRINTLN("The size of this device is " << size << " bytes.");
-		this->size = size;
+		disks.push_back(diskStats(fd));
+		this->size = disks.back().getSize();
+		DEBUGPRINTLN("The size of this device is " << this->size << " bytes.");
 	}
 
-	buseLODevice::~buseLODevice() { close(disks[0]->fd); }
+	buseLODevice::~buseLODevice() { close(disks[0].getFD()); }
 
-	template <class Function>
-	uint32_t buseLODevice::handleTX(void *buf, uint32_t len, uint64_t offset, Function func) {
-		int bytes_processed;
+	int buseLODevice::handleTX(void *buf, size_t len, off64_t offset, ssize_t (*func)(int, void *, size_t)) {
+		ssize_t bytes_processed;
 
-		lseek64(disks[0]->fd, offset, SEEK_SET);
+		DEBUGPRINTLN("handleTX(" << len << ',' << offset << ')' << endl);
+		lseek64(disks[0].getFD(), offset, SEEK_SET);
 		while (len > 0) {
-			bytes_processed = func(disks[0]->fd, buf, len);
+			bytes_processed = func(disks[0].getFD(), buf, len);
 			assert(bytes_processed > 0);
 			len -= bytes_processed;
 			buf = (char *) buf + bytes_processed;

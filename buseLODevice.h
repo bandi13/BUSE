@@ -12,11 +12,12 @@
 
 namespace buse {
 	class buseLODevice : public buseOperations {
-		public:
-			buseLODevice(char *fileName);
-			~buseLODevice();
-			template <class Function>
-			uint32_t handleTX(void *buf, uint32_t len, uint64_t offset,Function func);
+	public:
+		buseLODevice(char *fileName);
+		~buseLODevice();
+
+	protected:
+		virtual int handleTX(void *buf, size_t len, off64_t offset, ssize_t (*func)(int, void *, size_t)) override;
 	};
 }
 

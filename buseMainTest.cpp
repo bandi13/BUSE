@@ -29,9 +29,6 @@
 using namespace buse;
 using namespace std;
 
-// Global variable containing the currently operating BUSE level
-buseOperations *bop;
-
 static void usage(char *progName) {
 	cout << "Usage: " << progName << " <type> <physical device>* <virtual device>" << endl;
 	cout << "type => (LO | RAM) <type options>*" << endl;
@@ -41,8 +38,7 @@ static void usage(char *progName) {
 
 int main(int argc, char *argv[]) {
 	int opt;
-
-	bop = NULL; // Initialize to something benign
+	buseOperations *bop = NULL; // Initialize to something benign
 
 	if(argc < 3) { usage(argv[0]); return -1; }
 
@@ -50,16 +46,11 @@ int main(int argc, char *argv[]) {
 	if (strcmp(argv[1], "LO") == 0) {
 		bop = new buseLODevice(argv[2]);
 	} else if (strcmp(argv[1], "RAM") == 0) {
-		int size = 128 * 1024 * 1024;
+		uint64_t size = 128 * 1024 * 1024;
 		while ((opt = getopt(argc, argv, "s:")) != -1) {
 			switch (opt) {
-				case 's':
-					size = atol(optarg);
-					break;
-				default:
-					cerr << "Unknown error." << endl;
-					usage(argv[0]);
-					return -1;
+				case 's': size = strtoul(optarg,NULL, 10); break;
+				default: cerr << "Unknown error." << endl; usage(argv[0]); return -1;
 			}
 		}
 		bop = new buseRAMDevice(size);

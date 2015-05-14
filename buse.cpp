@@ -41,15 +41,17 @@
 #include <sys/wait.h>
 
 #include <iostream>
+
 using namespace std;
 
 // A function that takes the child end of the socket and handle commands coming in on the NBD device
 int nbdChild = -1;
+
 inline int doChild(const int sockChild, const uint64_t bopSize) {
 	int retVal = 0;
 	assert(ioctl(nbdChild, NBD_SET_SIZE, bopSize) != -1);
-//	assert(ioctl(nbd, NBD_SET_BLKSIZE, 4096) != -1);
-//	assert(ioctl(nbd, NBD_SET_SIZE_BLOCKS, bopSize / 4096) != -1);
+//	assert(ioctl(nbdChild, NBD_SET_BLKSIZE, 4096) != -1);
+//	assert(ioctl(nbdChild, NBD_SET_SIZE_BLOCKS, bopSize / 4096) != -1);
 	assert(ioctl(nbdChild, NBD_CLEAR_SOCK) != -1);
 
 	DEBUGPRINTLN("Child process started.");
@@ -71,7 +73,7 @@ inline int doChild(const int sockChild, const uint64_t bopSize) {
 		DEBUGPRINTLN("Before DO_IT");
 		int err = ioctl(nbdChild, NBD_DO_IT);
 		if (err == -1) {
-			if(errno != EPIPE) { // we're expecting a broken pipe when the parent closes it
+			if (errno != EPIPE) { // we're expecting a broken pipe when the parent closes it
 				cerr << "child: nbd device terminated with code " << errno << '(' << strerror(errno) << ')' << endl;
 				retVal = errno;
 			}
@@ -92,6 +94,7 @@ inline int doChild(const int sockChild, const uint64_t bopSize) {
 #ifdef WORDS_BIGENDIAN
 u_int64_t ntohll(u_int64_t a) { return a; }
 #else
+
 u_int64_t ntohll(u_int64_t a) {
 	u_int32_t lo = a & 0xffffffff;
 	u_int32_t hi = a >> 32U;
@@ -99,11 +102,12 @@ u_int64_t ntohll(u_int64_t a) {
 	hi = ntohl(hi);
 	return ((u_int64_t) lo) << 32U | hi;
 }
+
 #endif
 #define htonll ntohll
 
-static int read_all(int fd, char* buf, size_t count) {
-	int bytes_read;
+static void read_all(int fd, char *buf, size_t count) {
+	ssize_t bytes_read;
 
 	while (count > 0) {
 		bytes_read = read(fd, buf, count);
@@ -112,12 +116,10 @@ static int read_all(int fd, char* buf, size_t count) {
 		count -= bytes_read;
 	}
 	assert(count == 0);
-
-	return 0;
 }
 
-static int write_all(int fd, char* buf, size_t count) {
-	int bytes_written;
+static void write_all(int fd, char *buf, size_t count) {
+	ssize_t bytes_written;
 
 	while (count > 0) {
 		bytes_written = write(fd, buf, count);
@@ -126,29 +128,26 @@ static int write_all(int fd, char* buf, size_t count) {
 		count -= bytes_written;
 	}
 	assert(count == 0);
-
-	return 0;
 }
 
 // Function that distributes calls to the underlying storage structure(s)
-inline int doParent(const int sockParent, buseOperations *bop) {
+int doParent(const int sockParent, buseOperations *bop) {
 	ssize_t bytes_read;
 	struct nbd_request request;
 	struct nbd_reply reply;
 	uint32_t len;
 	uint64_t from;
 	void *chunk;
-	bool continueRunningParent = true;
 
 	reply.magic = htonl(NBD_REPLY_MAGIC);
 	reply.error = htonl(0);
 
 	DEBUGPRINTLN("Parent process is about to loop.");
 
-	while (continueRunningParent) {
-		DEBUGPRINTLN("Starting while loop.");
-		if((bytes_read = read(sockParent, &request, sizeof(request))) <= 0) continue;
-
+	DEBUGPRINTLN("Starting while loop.");
+	while (true) {
+		if ((bytes_read = read(sockParent, &request, sizeof(request))) == 0) continue; // interrupt happened
+		if(bytes_read == -1) { cerr << "Parent caught error: " << strerror(errno) << endl; return -1; }
 		assert(bytes_read == sizeof(request));
 		memcpy(reply.handle, request.handle, sizeof(reply.handle));
 
@@ -157,53 +156,53 @@ inline int doParent(const int sockParent, buseOperations *bop) {
 		assert(request.magic == htonl(NBD_REQUEST_MAGIC));
 
 		switch (ntohl(request.type)) {
-		/* I may at some point need to deal with the the fact that the
-		 * official nbd server has a maximum buffer size, and divides up
-		 * oversized requests into multiple pieces. This applies to reads
-		 * and writes.
-		 */
-		case NBD_CMD_READ:
-			DEBUGPRINTLN("Request for read of size " << len << " at " << from);
-			chunk = malloc(len);
-			reply.error = bop->read(chunk, len, from);
-			write_all(sockParent, (char*) &reply, sizeof(struct nbd_reply));
-			if (reply.error == 0) write_all(sockParent, (char*) chunk, len);
-			free(chunk);
-			break;
-		case NBD_CMD_WRITE:
-			DEBUGPRINTLN("Request for write of size " << len << " at " << from);
-			chunk = malloc(len);
-			read_all(sockParent, (char *) chunk, len);
-			reply.error = bop->write(chunk, len, from);
-			free(chunk);
-			write_all(sockParent, (char*) &reply, sizeof(struct nbd_reply));
-			break;
-		case NBD_CMD_DISC:
-			DEBUGPRINTLN("Request for disconnect.");
-			bop->disc();
-			continueRunningParent = false;
-			return 0;
+			/* I may at some point need to deal with the the fact that the
+			 * official nbd server has a maximum buffer size, and divides up
+			 * oversized requests into multiple pieces. This applies to reads
+			 * and writes.
+			 */
+			case NBD_CMD_READ:
+				DEBUGPRINTLN("Request for read of size " << len << " at " << from);
+				chunk = malloc(len);
+				reply.error = bop->read(chunk, len, from);
+				write_all(sockParent, (char *) &reply, sizeof(struct nbd_reply));
+				if (reply.error == 0) write_all(sockParent, (char *) chunk, len);
+				free(chunk);
+				break;
+			case NBD_CMD_WRITE:
+				DEBUGPRINTLN("Request for write of size " << len << " at " << from);
+				chunk = malloc(len);
+				read_all(sockParent, (char *) chunk, len);
+				reply.error = bop->write(chunk, len, from);
+				free(chunk);
+				write_all(sockParent, (char *) &reply, sizeof(struct nbd_reply));
+				break;
+			case NBD_CMD_DISC:
+				DEBUGPRINTLN("Request for disconnect.");
+				bop->disc();
+				return 0;
 #ifdef NBD_FLAG_SEND_FLUSH
-		case NBD_CMD_FLUSH:
-			DEBUGPRINTLN("Request for flush.");
-			reply.error = bop->flush();
-			write_all(sockParent, (char*) &reply, sizeof(struct nbd_reply));
-			break;
+			case NBD_CMD_FLUSH:
+				DEBUGPRINTLN("Request for flush.");
+				reply.error = bop->flush();
+				write_all(sockParent, (char *) &reply, sizeof(struct nbd_reply));
+				break;
 #endif
 #ifdef NBD_FLAG_SEND_TRIM
-		case NBD_CMD_TRIM:
-			DEBUGPRINTLN("Request for trim.");
-			reply.error = bop->trim(from, len);
-			write_all(sockParent, (char*) &reply, sizeof(struct nbd_reply));
-			break;
+			case NBD_CMD_TRIM:
+				DEBUGPRINTLN("Request for trim.");
+				reply.error = bop->trim(from, len);
+				write_all(sockParent, (char *) &reply, sizeof(struct nbd_reply));
+				break;
 #endif
-		default:
-			cerr << "Request unknown: " << ntohl(request.type) << endl;
-			assert(0);
+			default:
+				cerr << "Request unknown: " << ntohl(request.type) << endl;
+				assert(0);
 		}
 	}
-	if (continueRunningParent && (bytes_read == -1)) cerr << "Parent caught error: " << strerror(errno) << endl;
-	return 0;
+	cerr << "Snuck out of while(true)" << endl;
+	assert(0);
+	return -1;
 }
 
 void childSIGUSR1Handler(int s) {
@@ -222,7 +221,7 @@ void childSIGINTHandler(int s) {
 	static bool childSIGINTcaught = false;
 	UNUSED(s);
 	DEBUGPRINTLN("child: Caught signal " << s);
-	if(childSIGINTcaught) {
+	if (childSIGINTcaught) {
 		cout << "Child forcefully shutting down..." << endl;
 		exit(-1);
 	} else {
@@ -236,7 +235,7 @@ void parentSIGINTHandler(int s) {
 	static bool parentSIGINTcaught = false;
 	UNUSED(s);
 	DEBUGPRINTLN("parent: Caught signal " << s);
-	if(parentSIGINTcaught) {
+	if (parentSIGINTcaught) {
 		cout << "Parent forcefully shutting down..." << endl;
 		exit(-1);
 	} else {
@@ -245,7 +244,7 @@ void parentSIGINTHandler(int s) {
 	}
 }
 
-int buse_main(const char* dev_file, buseOperations *bop) {
+int buse_main(const char *dev_file, buseOperations *bop) {
 	int sp[2];
 	static const int sockParent = 0;
 	static const int sockChild = 1;
@@ -279,7 +278,7 @@ int buse_main(const char* dev_file, buseOperations *bop) {
 		sa.sa_handler = childSIGUSR1Handler;
 		sigaction(SIGUSR1, &sa, NULL);
 
-		retVal = doChild(sp[sockChild],bop->getSize());
+		retVal = doChild(sp[sockChild], bop->getSize());
 		close(sp[sockChild]);
 		DEBUGPRINTLN("Child process finished.");
 	}
@@ -289,10 +288,10 @@ int buse_main(const char* dev_file, buseOperations *bop) {
 
 		sa.sa_handler = parentSIGINTHandler;
 		sigaction(SIGINT, &sa, NULL);
-		sa.sa_handler = parentSIGUSR1Handler;
+		sa.sa_handler = SIG_IGN; // parentSIGUSR1Handler;
 		sigaction(SIGUSR1, &sa, NULL);
 
-		retVal = doParent(sp[sockParent],bop);
+		retVal = doParent(sp[sockParent], bop);
 		close(sp[sockParent]); // we are no longer listening to commands on the socket
 
 		delete bop; // Make sure to cleanly close up shop

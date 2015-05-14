@@ -16,28 +16,24 @@ namespace buse {
 	buseOperations::~buseOperations() {
 		DEBUGPRINTLN("Destroying buse object.");
 		while(!disks.empty()) {
-			close(disks.back()->fd);
-			delete disks.back();
+			close(disks.back().getFD());
 			disks.pop_back();
 		}
 	}
 
-	uint64_t buseOperations::getSize() { return size; }
-
-	uint32_t buseOperations::read(void *buf, uint32_t len, uint64_t offset) {
+	int buseOperations::read(void *buf, size_t len, off64_t offset) {
 		UNUSED(buf); UNUSED(len); UNUSED(offset);
 		DEBUGPRINTLN("R - " << offset << ", " << len);
-		return buseOperations::handleTX(buf,len, offset,::read);
+		return handleTX(buf,len, offset,::commonIncludesRead);
 	}
 
-	uint32_t buseOperations::write(const void *buf, uint32_t len, uint64_t offset) {
+	int buseOperations::write(const void *buf, size_t len, off64_t offset) {
 		UNUSED(buf); UNUSED(len); UNUSED(offset);
 		DEBUGPRINTLN("W - " << offset << ", " << len);
-		return buseOperations::handleTX((void*)buf,len, offset,::write);
+		return handleTX((void*)buf,len, offset,::commonIncludesWrite);
 	}
 
-	template <class Function>
-	uint32_t buseOperations::handleTX(void *buf, uint32_t len, uint64_t offset, Function func) {
+	int buseOperations::handleTX(void *buf, size_t len, off64_t offset, ssize_t (*func)(int, void *, size_t)) {
 		UNUSED(buf); UNUSED(len); UNUSED(offset); UNUSED(func);
 		DEBUGPRINTLN("H - " << offset << ", " << len);
 		return 0;
@@ -45,57 +41,33 @@ namespace buse {
 
 	void buseOperations::disc() { DEBUGPRINTLN("Received a disconnect request."); }
 
-	uint32_t buseOperations::flush() {
+	int buseOperations::flush() {
 		DEBUGPRINTLN("Received a flush request.");
-		for(uint i = 0; i < this->disks.size(); i++) ::syncfs(disks[i]->fd);
+		for(uint i = 0; i < this->disks.size(); i++) ::syncfs(disks[i].getFD());
 		return 0;
 	}
 
-	uint32_t buseOperations::trim(uint64_t from, uint32_t len) {
+	int buseOperations::trim(uint64_t from, uint32_t len) {
 		UNUSED(from); UNUSED(len);
 		DEBUGPRINTLN("T - " << from << ", " << len);
 		return 0;
 	}
 
-#define READBYTESSIZE (128*1024*1024)
-	void buseOperations::testDiskSpeed() {
-		auto startTime = chrono::system_clock::now();
-		char **buf = (char **) malloc(sizeof(char *) * 4);
-		buf[0] = (char *) malloc(sizeof(char) * READBYTESIZE);
-		buf[1] = (char *) malloc(sizeof(char) * READBYTESIZE);
-		buf[2] = (char *) malloc(sizeof(char) * READBYTESIZE);
-		buf[3] = (char *) malloc(sizeof(char) * READBYTESIZE);
-		for(uint i = 0; i < READBYTESSIZE; i++) { buf[3][i] = 0xA5; }
-		for(uint i = 0; i < disks.size(); i++) {
-			if(disks[i]->diskSize < 2*READBYTESSIZE) {
-				disks[i]->readSpeed = chrono::duration<double>().zero();
-				disks[i]->writeSpeed = chrono::duration<double>().zero();
-				continue;
-			}
-			startTime = chrono::system_clock::now();
-			lseek64(disks[i]->fd, 0, SEEK_SET);
-			::read(disks[i]->fd,&buf[0],READBYTESSIZE);
-			lseek64(disks[i]->fd, disks[i]->diskSize / 2, SEEK_SET);
-			::read(disks[i]->fd,&buf[1],READBYTESSIZE);
-			lseek64(disks[i]->fd, disks[i]->diskSize - READBYTESSIZE, SEEK_SET);
-			::read(disks[i]->fd,&buf[2],READBYTESSIZE);
-			disks[i]->readSpeed = chrono::system_clock::now() - startTime;
-			startTime = chrono::system_clock::now();
-			lseek64(disks[i]->fd, 0, SEEK_SET);
-			::write(disks[i]->fd,&buf[4],READBYTESSIZE);
-			lseek64(disks[i]->fd, disks[i]->diskSize / 2, SEEK_SET);
-			::write(disks[i]->fd,&buf[4],READBYTESSIZE);
-			lseek64(disks[i]->fd, disks[i]->diskSize - READBYTESSIZE, SEEK_SET);
-			::write(disks[i]->fd,&buf[4],READBYTESSIZE);
-			disks[i]->writeSpeed = chrono::system_clock::now() - startTime;
-			lseek64(disks[i]->fd, 0, SEEK_SET);
-			::write(disks[i]->fd,&buf[0],READBYTESSIZE);
-			lseek64(disks[i]->fd, disks[i]->diskSize / 2, SEEK_SET);
-			::write(disks[i]->fd,&buf[1],READBYTESSIZE);
-			lseek64(disks[i]->fd, disks[i]->diskSize - READBYTESSIZE, SEEK_SET);
-			::write(disks[i]->fd,&buf[2],READBYTESSIZE);
-		}
-		free(buf[0]); free(buf[1]); free(buf[2]); free(buf[3]);
-		free(buf);
+	uint8_t buseOperations::getNumAsyncIdle() {
+		uint8_t numDisks = 0;
+		for(uint i = 0; i < disks.size(); i++) { numDisks += (uint8_t)(disks[i].aio_error()!=EINPROGRESS); }
+		return numDisks;
+	}
+
+	uint8_t buseOperations::getFastestIdleReadDisk() {
+		uint8_t cdID = 0;
+		for(uint8_t i = 0; i < disks.size(); i++) { if((disks[i].aio_error()!=EINPROGRESS) && (disks[cdID].getReadSpeed() > disks[i].getReadSpeed())) cdID = i; }
+		return cdID;
+	}
+
+	uint8_t buseOperations::getFastestIdleWriteDisk() {
+		uint8_t cdID = 0;
+		for(uint8_t i = 0; i < disks.size(); i++) { if((disks[i].aio_error()!=EINPROGRESS) && (disks[cdID].getWriteSpeed() > disks[i].getWriteSpeed())) cdID = i; }
+		return cdID;
 	}
 }

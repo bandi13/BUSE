@@ -15,8 +15,8 @@ namespace buse {
 		public:
 			buseRAMDevice(uint64_t size);
 			~buseRAMDevice();
-			uint32_t read(void *buf, uint32_t len, uint64_t offset);
-			uint32_t write(const void *buf, uint32_t len, uint64_t offset);
+			virtual int read(void *buf, size_t len, off64_t offset) override;
+			virtual int write(const void *buf, size_t len, off64_t offset) override;
 		private:
 			void *data;
 	};
