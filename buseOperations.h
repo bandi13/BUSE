@@ -29,7 +29,7 @@ namespace buse {
 			virtual void disc();
 			virtual int flush();
 			virtual int trim(uint64_t from, uint32_t len);
-			inline uint8_t getNumDrives() { return disks.size(); }
+			inline uint8_t getNumDrives() { return (uint8_t)disks.size(); }
 			uint8_t getNumAsyncIdle();
 			uint8_t getFastestIdleReadDisk();
 			uint8_t getFastestIdleWriteDisk();

@@ -32,7 +32,7 @@ namespace buse {
 		fstat(fd, &buf);
 		assert(S_ISBLK(buf.st_mode));
 
-		disks.push_back(diskStats(fd));
+		disks.push_back(diskStats(fd, string(fileName)));
 		this->size = disks.back().getSize();
 		DEBUGPRINTLN("The size of this device is " << this->size << " bytes.");
 	}

@@ -50,20 +50,22 @@ namespace prettyPrint {
 inline ssize_t commonIncludesRead(int fd, void *buf, size_t count) { return ::read(fd,buf,count); }
 inline ssize_t commonIncludesWrite(int fd, void *buf, size_t count) { return ::write(fd,buf,count); }
 
+#define likely(x)	__builtin_expect(!!(x), 1)
+#define unlikely(x)	__builtin_expect(!!(x), 0)
+
 #ifdef DEBUG
 
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/lock_guard.hpp>
-
-static boost::mutex commonIncludesMutex;
+#include <boost/serialization/singleton.hpp>
 
 #define DEBUGCODE(X) do {\
-	boost::lock_guard<boost::mutex> guard(commonIncludesMutex);\
+	boost::lock_guard<boost::mutex> guard(boost::serialization::singleton<boost::mutex>::get_mutable_instance());\
     cerr << prettyPrint::format(std::chrono::system_clock::now()) << ':' << __FILE__ << ':' << __LINE__ << ": " << endl;\
     { X; };\
     } while(0);
 #define DEBUGPRINTLN(X) do {\
-	boost::lock_guard<boost::mutex> guard(commonIncludesMutex);\
+	boost::lock_guard<boost::mutex> guard(boost::serialization::singleton<boost::mutex>::get_mutable_instance());\
     cerr << prettyPrint::format(std::chrono::system_clock::now()) << ':' << __FILE__ << ':' << __LINE__ << ": " << X << endl;\
     } while(0);
 #else

@@ -15,10 +15,7 @@ namespace buse {
 
 	buseOperations::~buseOperations() {
 		DEBUGPRINTLN("Destroying buse object.");
-		while(!disks.empty()) {
-			close(disks.back().getFD());
-			disks.pop_back();
-		}
+		while(!disks.empty()) { close(disks.back().getFD()); disks.pop_back(); }
 	}
 
 	int buseOperations::read(void *buf, size_t len, off64_t offset) {
